@@ -40,9 +40,14 @@ main :: () {
         i += 1;
     }
 
+    if query == replace {
+        print("Both strings are the same. Nothing to do.\n");
+        exit(0);
+    }
+
     if help {
         print_help(args);
-        exit(1);
+        exit(0);
     }
 
     _, output_string, _, _ := run_command("git", "rev-parse", "--show-toplevel", capture_and_return_output = true);
@@ -64,11 +69,11 @@ main :: () {
         if unprotected_files_result.count > 0 {
             unprotected_files := split(unprotected_files_result, "\n");
             if unprotected_files.count > 0 {
-                // print("Detected unstaged or untracked changes in the git repository! Please stage them or use -f to ignore this warning.\n");
-                // for unprotected_files {
-                //     print("- %\n", it);
-                // }
-                // exit(1);
+                print("Detected unstaged or untracked changes in the git repository! Please stage them or use -f to ignore this warning.\n");
+                for unprotected_files {
+                    print("- %\n", it);
+                }
+                exit(1);
             }
         }
     }
@@ -85,25 +90,69 @@ main :: () {
         list_of_files = split(trim(output_string), "\n");
     }
 
+    print("Searching folder %\n", directory);
+
+    matched_files_count := 0;
+    total_matches_count := 0;
+
     for list_of_files {
-        // TODO: preview of all replacements before commiting (important for -f, otherwise can use git after the fact)
         contents, ok := read_entire_file(it, zero_terminated = false, log_errors = false);
+        defer free(contents.data);
 
-        // filter out binary files
-        if find_index_from_left(contents, byte = 0) != -1  continue;
+        if find_index_from_left(contents, byte = 0) != -1  continue; // filter out binary files
 
+        // TODO: do not print the same line when multiple matches are found on it
+        // this generally calls for remaking the algorithm in favor of going line-by-line instead of skipping to the next match
+        // this way it is also going to be trivial to print location in file
+
+        did_print_file_name := false;
         offset := 0;
         while contents.count > 0 {
             start, found := find_next_match(contents, query, offset);
             if !found  break;
             offset = start + query.count;
 
-            match_string := string .{ data = contents.data + start - 20, count = query.count + 40 };
-            print("Match:\n%\n\n", match_string);
+            if !did_print_file_name {
+                did_print_file_name = true;
+                print("\n%\n", it);
+            }
+
+            line_start := 0;
+            cursor := offset - 1;
+            while cursor >= 0 {
+                if contents[cursor] == #char "\n" {
+                    line_start = cursor;
+                    break;
+                }
+                cursor -= 1;
+            }
+
+            line_end := contents.count;
+            cursor = offset;
+            while cursor < contents.count {
+                if contents[cursor] == #char "\n" {
+                    line_end = cursor;
+                    break;
+                }
+                cursor += 1;
+            }
+
+            match_line_prefix := string .{ data = contents.data + line_start, count = offset - line_start - query.count };
+            match_line_suffix := string .{ data = contents.data + offset, count = line_end - offset };
+
+            print("    %", trim_left(match_line_prefix));
+            print_color("%", query, color = .RED);
+            print("%\n", trim_right(match_line_suffix));
+
+            total_matches_count += 1;
         }
 
-        print("% - % bytes\n", it, contents.count);
+        if did_print_file_name {
+            matched_files_count += 1;
+        }
     }
+
+    print("\nFound % matches in % files\n", total_matches_count, matched_files_count);
 }
 
 find_next_match :: (contents: string, query: string, offset: s64) -> (start: s64, found: bool) {
@@ -127,7 +176,10 @@ print_help :: (args: []string) {
     print("Example: % -f -d ~/Documents/People/ \"Name Surnam\" \"Name Surname\"\n", args[0]);
 }
 
+// TODO: use multithreading
+// TODO: mode to ask for every file before commiting
 // TODO: maybe filter files according to .ignore file
+// TODO: maybe restrict some characters in query, like newline
 
 // written using jai compiler 0.2.021
 #import "Basic";
@@ -136,3 +188,4 @@ print_help :: (args: []string) {
 #import "System";
 #import "File_Utilities";
 #import "File";
+#import "Print_Color";
