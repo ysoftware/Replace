@@ -5,8 +5,41 @@ main :: () {
         exit(1);
     }
 
-    ok, query, replace, directory, force, help := parse_arguments(args);
-    if !ok exit(1);
+    if args.count < 3 {
+        print_help(args);
+        exit(1);
+    }
+
+    query := "";
+    replace := "";
+    directory := "";
+    force := false;
+    help := false;
+
+    i := 1;
+    while (i < args.count) {
+        if args[i] == "-d" {
+            i += 1;
+            directory = args[i];
+        } else if args[i] == "-f" {
+            force = true;
+        } else if args[i] == "-h" {
+            help = true;
+        } else {
+            if query.count == 0 {
+                query = args[i];
+            } else if (replace.count == 0) {
+                replace = args[i];
+            } else {
+                print("Error: Unexpected extra argument '%'.\nPrinting help...\n\n", args[i]);
+                print_help(args);
+                exit(1);
+            }
+        }
+
+        i += 1;
+    }
+
     if help {
         print_help(args);
         exit(1);
@@ -26,14 +59,17 @@ main :: () {
         }
 
         _, output_string, _, _ := run_command("git", "ls-files", "--others", "--modified", "--exclude-standard", capture_and_return_output = true);
-        unprotected_files := split(trim(output_string), "\n");
+        unprotected_files_result := trim(output_string);
 
-        if unprotected_files.count > 0 {
-            print("Detected unstaged or untracked changes in the git repository! Please stage them or use -f to ignore this warning.\n");
-            for unprotected_files {
-                print("- %\n", it);
+        if unprotected_files_result.count > 0 {
+            unprotected_files := split(unprotected_files_result, "\n");
+            if unprotected_files.count > 0 {
+                // print("Detected unstaged or untracked changes in the git repository! Please stage them or use -f to ignore this warning.\n");
+                // for unprotected_files {
+                //     print("- %\n", it);
+                // }
+                // exit(1);
             }
-            exit(1);
         }
     }
 
@@ -49,53 +85,35 @@ main :: () {
         list_of_files = split(trim(output_string), "\n");
     }
 
-    print("All files:\n");
     for list_of_files {
-        print("%\n", it);
-    }
-}
+        // TODO: preview of all replacements before commiting (important for -f, otherwise can use git after the fact)
+        contents, ok := read_entire_file(it, zero_terminated = false, log_errors = false);
 
-parse_arguments :: (args: []string) -> (ok: bool, query: string, replace: string, directory: string, force: bool, help: bool) {
-    query := "";
-    replace := "";
-    directory := "";
-    force := false;
-    help := false;
+        // filter out binary files
+        if find_index_from_left(contents, byte = 0) != -1  continue;
 
-    if args.count < 3 {
-        return false, query, replace, directory, force, help;
-    }
+        offset := 0;
+        while contents.count > 0 {
+            start, found := find_next_match(contents, query, offset);
+            if !found  break;
+            offset = start + query.count;
 
-    i := 1;
-    while (i < args.count) {
-        if args[i] == "-d" {
-            i += 1;
-            directory = args[i];
-        } else if args[i] == "-f" {
-            force = true;
-        } else if args[i] == "-h" {
-            help = true;
-        } else {
-            if query.count == 0 {
-                query = args[i];
-            } else if (replace.count == 0) {
-                replace = args[i];
-            } else {
-                print("Unexpected argument %.\n", args[i]);
-                return false, query, replace, directory, force, help;
-            }
+            match_string := string .{ data = contents.data + start - 20, count = query.count + 40 };
+            print("Match:\n%\n\n", match_string);
         }
 
-        i += 1;
+        print("% - % bytes\n", it, contents.count);
     }
-    return true, query, replace, directory, force, help;
 }
 
-// TODO: preview of all replacements before commiting (important for -f, otherwise can use git after the fact)
-// TODO: decide how to operate on ignored and untracked files
-// TODO: maybe filter files according to .ignore file
+find_next_match :: (contents: string, query: string, offset: s64) -> (start: s64, found: bool) {
+    index := find_index_from_left(contents, query, offset);
+    if index == -1  return 0, false;
+    return index, true;
+}
+
 print_help :: (args: []string) {
-    print("Literally replaces occurences of a string with another string inside of files found recursively in directory.\n");
+    print("This tool literally replaces occurences of a string with another string inside of files found recursively in directory.\n");
     print("By default finds and uses the git root of the current working directory.\n");
     print("\n");
     print("To prevent loss of data, by default refuses to run outside of a git repository or with other unstaged or untracked changes inside of the git repository.\n");
@@ -109,9 +127,12 @@ print_help :: (args: []string) {
     print("Example: % -f -d ~/Documents/People/ \"Name Surnam\" \"Name Surname\"\n", args[0]);
 }
 
+// TODO: maybe filter files according to .ignore file
+
 // written using jai compiler 0.2.021
 #import "Basic";
 #import "Process";
 #import "String";
 #import "System";
 #import "File_Utilities";
+#import "File";
