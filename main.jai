@@ -96,55 +96,61 @@ main :: () {
     total_matches_count := 0;
 
     for list_of_files {
+        if it[0] == #char "." continue;
+
         contents, ok := read_entire_file(it, zero_terminated = false, log_errors = false);
         defer free(contents.data);
 
         if find_index_from_left(contents, byte = 0) != -1  continue; // filter out binary files
 
-        // TODO: do not print the same line when multiple matches are found on it
-        // this generally calls for remaking the algorithm in favor of going line-by-line instead of skipping to the next match
-        // this way it is also going to be trivial to print location in file
-
+        reached_eof := false;
         did_print_file_name := false;
-        offset := 0;
-        while contents.count > 0 {
-            start, found := find_next_match(contents, query, offset);
-            if !found  break;
-            offset = start + query.count;
+        content_offset := 0;
+        line_number := 1;
+        is_even_color := true;
+        while content_offset < contents.count {
+            color: Console_Color = ifx is_even_color then .GREEN else .BLUE;
 
-            if !did_print_file_name {
-                did_print_file_name = true;
-                print("\n%\n", it);
+            line_end := find_index_from_left(contents, #char "\n", content_offset);
+            if line_end == -1 {
+                line_end = contents.count-1;
+                reached_eof = true;
             }
+            line := string.{ data = *contents[content_offset], count = line_end - content_offset + 1 }; // +1 to include new line
+            content_offset += line.count;
 
-            line_start := 0;
-            cursor := offset - 1;
-            while cursor >= 0 {
-                if contents[cursor] == #char "\n" {
-                    line_start = cursor;
+            line_offset := 0;
+            did_print_line_number := false;
+            while true {
+                match_index := find_index_from_left(line, query, line_offset);
+                if match_index == -1 {
+                    if did_print_line_number {
+                        print_color("%", string.{ data = line.data + line_offset, count = line.count - line_offset }, color = .WHITE);
+                    }
                     break;
                 }
-                cursor -= 1;
-            }
 
-            line_end := contents.count;
-            cursor = offset;
-            while cursor < contents.count {
-                if contents[cursor] == #char "\n" {
-                    line_end = cursor;
-                    break;
+                if !did_print_file_name {
+                    did_print_file_name = true;
+                    print_color("\n%\n", it, color = .WHITE);
                 }
-                cursor += 1;
+                if !did_print_line_number {
+                    is_even_color = !is_even_color;
+                    did_print_line_number = true;
+                    print_color("%: ", FormatInt.{ value = line_number, minimum_digits = 6, padding = " " }, color = color);
+                }
+
+                print_color("%", string.{ data = line.data + line_offset, count = match_index - line_offset }, color = .WHITE);
+                print_color("%", query, color = color);
+
+                line_offset += match_index - line_offset + query.count;
+                total_matches_count += 1;
             }
 
-            match_line_prefix := string .{ data = contents.data + line_start, count = offset - line_start - query.count };
-            match_line_suffix := string .{ data = contents.data + offset, count = line_end - offset };
+            line_number += 1;
 
-            print("    %", trim_left(match_line_prefix));
-            print_color("%", query, color = .RED);
-            print("%\n", trim_right(match_line_suffix));
-
-            total_matches_count += 1;
+            if reached_eof  break;
+            continue;
         }
 
         if did_print_file_name {
@@ -152,13 +158,9 @@ main :: () {
         }
     }
 
-    print("\nFound % matches in % files\n", total_matches_count, matched_files_count);
-}
-
-find_next_match :: (contents: string, query: string, offset: s64) -> (start: s64, found: bool) {
-    index := find_index_from_left(contents, query, offset);
-    if index == -1  return 0, false;
-    return index, true;
+    match_word := ifx total_matches_count == 1 then "match" else "matches";
+    file_word := ifx matched_files_count == 1 then "file" else "files";
+    print("\nFound % % in % %\n", total_matches_count, match_word, matched_files_count, file_word);
 }
 
 print_help :: (args: []string) {
@@ -176,8 +178,10 @@ print_help :: (args: []string) {
     print("Example: % -f -d ~/Documents/People/ \"Name Surnam\" \"Name Surname\"\n", args[0]);
 }
 
+// TODO: option to disable colored output
+// TODO: option to print file name together with file number (for emacs/vim navigation)
+// TODO: option to ask to approve for every file before making the change
 // TODO: use multithreading
-// TODO: mode to ask for every file before commiting
 // TODO: maybe filter files according to .ignore file
 // TODO: maybe restrict some characters in query, like newline
 
