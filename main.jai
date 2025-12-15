@@ -125,14 +125,14 @@ main :: () {
                 match_index := find_index_from_left(line, query, line_offset);
                 if match_index == -1 {
                     if did_print_line_number {
-                        print_color("%", string.{ data = line.data + line_offset, count = line.count - line_offset }, color = .WHITE);
+                        print("%", string.{ data = line.data + line_offset, count = line.count - line_offset });
                     }
                     break;
                 }
 
                 if !did_print_file_name {
                     did_print_file_name = true;
-                    print_color("\n%\n", it, color = .WHITE);
+                    print("\n%\n", it);
                 }
                 if !did_print_line_number {
                     is_even_color = !is_even_color;
@@ -140,7 +140,8 @@ main :: () {
                     print_color("%: ", FormatInt.{ value = line_number, minimum_digits = 6, padding = " " }, color = color);
                 }
 
-                print_color("%", string.{ data = line.data + line_offset, count = match_index - line_offset }, color = .WHITE);
+                prefix := string.{ data = line.data + line_offset, count = match_index - line_offset };
+                print("%", trim_left(prefix));
                 print_color("%", query, color = color);
 
                 line_offset += match_index - line_offset + query.count;
@@ -184,8 +185,12 @@ print_help :: (args: []string) {
 // TODO: use multithreading
 // TODO: maybe filter files according to .ignore file
 // TODO: maybe restrict some characters in query, like newline
+// TODO: don't print lines that are too long (longer than 300 characters) - split them into multiple matches
+// TODO: replace 'files' command
+// TODO: check if git is installed
 
 // written using jai compiler 0.2.021
+
 #import "Basic";
 #import "Process";
 #import "String";
