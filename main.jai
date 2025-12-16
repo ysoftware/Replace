@@ -63,7 +63,7 @@ main :: () {
             exit(1);
         }
 
-        _, output_string, _, _ := run_command("git", "ls-files", "--others", "--modified", "--exclude-standard", capture_and_return_output = true);
+        _, output_string, _, _ := run_command("git", "ls-files", "--others", "--modified", "--exclude-standard", capture_and_return_output = true, working_directory = directory);
         unprotected_files_result := trim(output_string);
 
         if unprotected_files_result.count > 0 {
@@ -81,27 +81,55 @@ main :: () {
     if directory.count == 0 {
         directory = get_working_directory();
     }
+    print("Searching folder %\n", directory);
+    directory = get_absolute_path(directory);
 
     list_of_files : []string;
     if git_root.count == 0 {
         list_of_files = file_list(directory, recursive = true, follow_directory_symlinks = false);
     } else {
-        _, output_string, _, _ := run_command("git", "ls-files", "--exclude-standard", capture_and_return_output = true);
-        list_of_files = split(trim(output_string), "\n");
+        _, output_string, _, _ := run_command("git", "ls-files", "--exclude-standard", capture_and_return_output = true, working_directory = directory);
+        if output_string.count > 0 {
+            list_of_files = split(trim(output_string), "\n");
+        } else {
+            list_of_files = file_list(directory, recursive = true, follow_directory_symlinks = false);
+        }
     }
 
-    print("Searching folder %\n", directory);
+    if list_of_files.count == 0 {
+        print("No files found.\n");
+        exit(0);
+    }
 
     matched_files_count := 0;
     total_matches_count := 0;
+    scanned_files_count := 0;
+
+    file_read_arena : Flat_Pool;
+
+    arena: Flat_Pool;
+    arena_allocator := Allocator.{ proc = flat_pool_allocator_proc, data = *arena };
 
     for list_of_files {
-        if it[0] == #char "." continue;
+        if it[0] == #char "." continue; // TODO: this does not work anymore, because our directory name is converted to absolute
 
-        contents, ok := read_entire_file(it, zero_terminated = false, log_errors = false);
-        defer free(contents.data);
+        file, ok := file_open(it, for_writing=false, keep_existing_content=false);
+        if !ok continue;
+        defer file_close(*file);
 
-        if find_index_from_left(contents, byte = 0) != -1  continue; // filter out binary files
+        file_size, ok= := file_length(file);
+        if !ok continue;
+
+        if file_size > 50000000 {
+            print("%: file is larger than 50 MB. Skipping.\n", it);
+            continue;
+        }
+
+        reset(*arena, overwrite_memory = false);
+        contents, ok= := read_entire_file(file, zero_terminated = false,, arena_allocator);
+        scanned_files_count += 1;
+
+        if !ok || find_index_from_left(contents, byte = 0) != -1  continue; // filter out binary files
 
         reached_eof := false;
         did_print_file_name := false;
@@ -159,9 +187,12 @@ main :: () {
         }
     }
 
+    fini(*arena);
+
     match_word := ifx total_matches_count == 1 then "match" else "matches";
     file_word := ifx matched_files_count == 1 then "file" else "files";
-    print("\nFound % % in % %\n", total_matches_count, match_word, matched_files_count, file_word);
+    total_word := ifx list_of_files.count == 1 then "file" else "files";
+    print("\nFound % % in % % (scanned % out of % %)\n", total_matches_count, match_word, matched_files_count, file_word, scanned_files_count, list_of_files.count, total_word);
 }
 
 print_help :: (args: []string) {
@@ -189,7 +220,7 @@ print_help :: (args: []string) {
 // TODO: replace 'files' command
 // TODO: check if git is installed
 
-// written using jai compiler 0.2.021
+// written using jai compiler 0.2.022
 
 #import "Basic";
 #import "Process";
@@ -198,3 +229,4 @@ print_help :: (args: []string) {
 #import "File_Utilities";
 #import "File";
 #import "Print_Color";
+#import "Flat_Pool";
