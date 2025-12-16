@@ -13,6 +13,7 @@ main :: () {
     query := "";
     replace := "";
     directory := "";
+    approve := true;
     force := false;
     help := false;
 
@@ -21,6 +22,8 @@ main :: () {
         if args[i] == "-d" {
             i += 1;
             directory = args[i];
+        } else if args[i] == "-y" {
+            approve = false;
         } else if args[i] == "-f" {
             force = true;
         } else if args[i] == "-h" {
@@ -106,19 +109,18 @@ main :: () {
         exit(0);
     }
 
-    search_arena: Flat_Pool;
-    search_allocator := Allocator.{ proc = flat_pool_allocator_proc, data = *search_arena };
+    files_arena: Flat_Pool;
+    files_allocator := Allocator.{ proc = flat_pool_allocator_proc, data = *files_arena };
 
     matches_arena: Flat_Pool;
     matches_allocator := Allocator.{ proc = flat_pool_allocator_proc, data = *matches_arena };
 
-    matched_files_count := 0;
-    total_matches_count := 0;
-    scanned_files_count := 0;
-
     matches: [..]FilesMatches;
     matches.allocator = matches_allocator;
 
+    matched_files_count := 0;
+    total_matches_count := 0;
+    scanned_files_count := 0;
     for list_of_files {
         if it[0] == #char "." continue; // TODO: this does not work anymore, because our directory name is converted to absolute
 
@@ -134,8 +136,8 @@ main :: () {
             continue;
         }
 
-        reset(*search_arena, overwrite_memory = false);
-        contents, ok= := read_entire_file(file, zero_terminated = false,, search_allocator);
+        reset(*files_arena, overwrite_memory = false);
+        contents, ok= := read_entire_file(file, zero_terminated = false,, files_allocator);
         scanned_files_count += 1;
 
         if !ok || find_index_from_left(contents, byte = 0) != -1  continue; // filter out binary files
@@ -154,7 +156,6 @@ main :: () {
                 reached_eof = true;
             }
             line := string.{ data = *contents[content_offset], count = line_end - content_offset + 1 }; // +1 to include new line
-            content_offset += line.count;
 
             line_offset := 0;
             did_print_line_number := false;
@@ -172,6 +173,7 @@ main :: () {
                     print("\n%\n", it);
 
                     array_add(*matches, .{ path = it });
+                    matches[matches.count-1].offsets.allocator = matches_allocator;
                 }
                 if !did_print_line_number {
                     is_even_color = !is_even_color;
@@ -179,7 +181,7 @@ main :: () {
                     print_color("%: ", FormatInt.{ value = line_number, minimum_digits = 6, padding = " " }, color = color);
                 }
 
-                array_add(*matches[matches.count-1].offsets, match_index);
+                array_add(*matches[matches.count-1].offsets, content_offset+match_index);
 
                 prefix := string.{ data = line.data + line_offset, count = match_index - line_offset };
                 print("%", trim_left(prefix));
@@ -190,6 +192,7 @@ main :: () {
             }
 
             line_number += 1;
+            content_offset += line.count;
 
             if reached_eof  break;
             continue;
@@ -200,16 +203,61 @@ main :: () {
         }
     }
 
-    fini(*search_arena);
+    print("\n");
 
     match_word := ifx total_matches_count == 1 then "match" else "matches";
     file_word := ifx matched_files_count == 1 then "file" else "files";
     total_word := ifx list_of_files.count == 1 then "file" else "files";
-    print("\nFound % % in % % (scanned % out of % %)\n", total_matches_count, match_word, matched_files_count, file_word, scanned_files_count, list_of_files.count, total_word);
 
+    print("Found % % in % % (scanned % out of % %)\n", total_matches_count, match_word, matched_files_count, file_word, scanned_files_count, list_of_files.count, total_word);
 
-    print("%\n", matches);
+    if approve {
+        print("Please type 'y' approve the changes or anything else to cancel: ");
+        buffer: *u8 = alloc(256);
+        fgets(buffer, 256, stdin);
+        user_input := to_string(buffer);
+
+        if user_input != "y\n" {
+            printf("Cancelled.\n");
+            exit(0);
+        }
+    }
+
+    for matches {
+        reset(*files_arena, overwrite_memory = false);
+        contents, ok := read_entire_file(it.path, zero_terminated = false,, files_allocator);
+
+        output := string.{ data = alloc(contents.count + it.offsets.count * (replace.count - query.count),, files_allocator) };
+        read_offset := 0;
+
+        for it.offsets {
+            skip_data_length := it - read_offset;
+            memcpy(*output.data[output.count], *contents.data[read_offset], skip_data_length);
+            output.count += skip_data_length;
+            read_offset += skip_data_length;
+
+            memcpy(*output.data[output.count], replace.data, replace.count);
+            read_offset += query.count;
+            output.count += replace.count;
+        }
+
+        memcpy(*output.data[output.count], *contents.data[read_offset], contents.count - read_offset);
+        output.count += contents.count - read_offset;
+
+        ok = write_entire_file(it.path, output);
+        if !ok {
+            print("Could not write to file %. Interrupting.\n", it.path);
+            exit(1);
+        }
+        print("Written %.\n", it.path);
+    }
+
+    if matches.count > 5 {
+        print("Written % files.\n", matches.count);
+    }
+
     fini(*matches_arena);
+    fini(*files_arena);
 }
 
 print_help :: (args: []string) {
@@ -229,17 +277,18 @@ print_help :: (args: []string) {
 
 FilesMatches :: struct {
     path: string;
-    offsets: []s64;
+    offsets: [..]s64;
 }
 
-// TODO: option to disable colored output
-// TODO: option to print file name together with file number (for emacs/vim navigation)
-// TODO: option to ask to approve for every file before making the change
+// TODO: ../../Replace/main a b -- can not read the files, working dir ends up being incorrect (-d . works)
+// TODO: support multiple directories for search just by providing -d several times
+// TODO: option -g to disable colored output
+// TODO: option -n to print file name together with file number (for emacs/vim navigation)
+// TODO: option -c to ask to approve for every file before making the change
 // TODO: use multithreading
 // TODO: maybe filter files according to .ignore file
 // TODO: maybe restrict some characters in query, like newline
 // TODO: don't print lines that are too long (longer than 300 characters) - split them into multiple matches
-// TODO: replace 'files' command
 // TODO: check if git is installed
 
 // written using jai compiler 0.2.022
@@ -252,3 +301,4 @@ FilesMatches :: struct {
 #import "File";
 #import "Print_Color";
 #import "Flat_Pool";
+#import "POSIX";
