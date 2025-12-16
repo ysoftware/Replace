@@ -40,6 +40,11 @@ main :: () {
         i += 1;
     }
 
+    if query == "" || replace == "" {
+        print_help(args);
+        exit(0);
+    }
+
     if query == replace {
         print("Both strings are the same. Nothing to do.\n");
         exit(0);
@@ -101,14 +106,18 @@ main :: () {
         exit(0);
     }
 
+    search_arena: Flat_Pool;
+    search_allocator := Allocator.{ proc = flat_pool_allocator_proc, data = *search_arena };
+
+    matches_arena: Flat_Pool;
+    matches_allocator := Allocator.{ proc = flat_pool_allocator_proc, data = *matches_arena };
+
     matched_files_count := 0;
     total_matches_count := 0;
     scanned_files_count := 0;
 
-    file_read_arena : Flat_Pool;
-
-    arena: Flat_Pool;
-    arena_allocator := Allocator.{ proc = flat_pool_allocator_proc, data = *arena };
+    matches: [..]FilesMatches;
+    matches.allocator = matches_allocator;
 
     for list_of_files {
         if it[0] == #char "." continue; // TODO: this does not work anymore, because our directory name is converted to absolute
@@ -125,8 +134,8 @@ main :: () {
             continue;
         }
 
-        reset(*arena, overwrite_memory = false);
-        contents, ok= := read_entire_file(file, zero_terminated = false,, arena_allocator);
+        reset(*search_arena, overwrite_memory = false);
+        contents, ok= := read_entire_file(file, zero_terminated = false,, search_allocator);
         scanned_files_count += 1;
 
         if !ok || find_index_from_left(contents, byte = 0) != -1  continue; // filter out binary files
@@ -161,12 +170,16 @@ main :: () {
                 if !did_print_file_name {
                     did_print_file_name = true;
                     print("\n%\n", it);
+
+                    array_add(*matches, .{ path = it });
                 }
                 if !did_print_line_number {
                     is_even_color = !is_even_color;
                     did_print_line_number = true;
                     print_color("%: ", FormatInt.{ value = line_number, minimum_digits = 6, padding = " " }, color = color);
                 }
+
+                array_add(*matches[matches.count-1].offsets, match_index);
 
                 prefix := string.{ data = line.data + line_offset, count = match_index - line_offset };
                 print("%", trim_left(prefix));
@@ -187,12 +200,16 @@ main :: () {
         }
     }
 
-    fini(*arena);
+    fini(*search_arena);
 
     match_word := ifx total_matches_count == 1 then "match" else "matches";
     file_word := ifx matched_files_count == 1 then "file" else "files";
     total_word := ifx list_of_files.count == 1 then "file" else "files";
     print("\nFound % % in % % (scanned % out of % %)\n", total_matches_count, match_word, matched_files_count, file_word, scanned_files_count, list_of_files.count, total_word);
+
+
+    print("%\n", matches);
+    fini(*matches_arena);
 }
 
 print_help :: (args: []string) {
@@ -208,6 +225,11 @@ print_help :: (args: []string) {
     print("\n");
     print("Example: % print printf\n", args[0]);
     print("Example: % -f -d ~/Documents/People/ \"Name Surnam\" \"Name Surname\"\n", args[0]);
+}
+
+FilesMatches :: struct {
+    path: string;
+    offsets: []s64;
 }
 
 // TODO: option to disable colored output
