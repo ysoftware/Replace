@@ -14,7 +14,7 @@ main :: () {
     replace := "";
     directory := "";
     approve := true;
-    force := false;
+    ignore_git := false;
     help := false;
 
     i := 1;
@@ -24,8 +24,8 @@ main :: () {
             directory = args[i];
         } else if args[i] == "-y" {
             approve = false;
-        } else if args[i] == "-f" {
-            force = true;
+        } else if args[i] == "-i" {
+            ignore_git = true;
         } else if args[i] == "-h" {
             help = true;
         } else {
@@ -65,9 +65,9 @@ main :: () {
         directory = git_root;
     }
 
-    if !force {
+    if !ignore_git {
         if git_root.count == 0 {
-            print("Git repository was not detected. To prevent loss of data, use git or pass -f to ignore this warning.\n");
+            print("Git repository was not detected. To prevent loss of data, use git or pass -i to ignore this warning.\n");
             exit(1);
         }
 
@@ -77,7 +77,7 @@ main :: () {
         if unprotected_files_result.count > 0 {
             unprotected_files := split(unprotected_files_result, "\n");
             if unprotected_files.count > 0 {
-                print("Detected unstaged or untracked changes in the git repository! Please stage them or use -f to ignore this warning.\n");
+                print("Detected unstaged or untracked changes in the git repository! Please stage them or use -i to ignore this check.\n");
                 for unprotected_files {
                     print("- %\n", it);
                 }
@@ -111,14 +111,20 @@ main :: () {
 
     files_arena: Flat_Pool;
     files_allocator := Allocator.{ proc = flat_pool_allocator_proc, data = *files_arena };
+    defer fini(*files_arena);
 
     matches_arena: Flat_Pool;
     matches_allocator := Allocator.{ proc = flat_pool_allocator_proc, data = *matches_arena };
+    defer fini(*matches_arena);
+
+    FilesMatches :: struct {
+        path: string;
+        offsets: [..]s64;
+    }
 
     matches: [..]FilesMatches;
     matches.allocator = matches_allocator;
 
-    matched_files_count := 0;
     total_matches_count := 0;
     scanned_files_count := 0;
     for list_of_files {
@@ -170,7 +176,7 @@ main :: () {
 
                 if !did_print_file_name {
                     did_print_file_name = true;
-                    print("\n%\n", it);
+                    print_color("\n%\n", it, color = .RED);
 
                     array_add(*matches, .{ path = it });
                     matches[matches.count-1].offsets.allocator = matches_allocator;
@@ -185,7 +191,7 @@ main :: () {
 
                 prefix := string.{ data = line.data + line_offset, count = match_index - line_offset };
                 print("%", trim_left(prefix));
-                print_color("%", query, color = color);
+                print_color("%\n", query, color = color);
 
                 line_offset += match_index - line_offset + query.count;
                 total_matches_count += 1;
@@ -197,22 +203,20 @@ main :: () {
             if reached_eof  break;
             continue;
         }
-
-        if did_print_file_name {
-            matched_files_count += 1;
-        }
     }
 
-    print("\n");
-
     match_word := ifx total_matches_count == 1 then "match" else "matches";
-    file_word := ifx matched_files_count == 1 then "file" else "files";
+    file_word := ifx matches.count == 1 then "file" else "files";
     total_word := ifx list_of_files.count == 1 then "file" else "files";
 
-    print("Found % % in % % (scanned % out of % %)\n", total_matches_count, match_word, matched_files_count, file_word, scanned_files_count, list_of_files.count, total_word);
+    print("Found % % in % % (scanned % out of % %)\n", total_matches_count, match_word, matches.count, file_word, scanned_files_count, list_of_files.count, total_word);
+
+    if matches.count == 0 {
+        exit(0);
+    }
 
     if approve {
-        print("Please type 'y' approve the changes or anything else to cancel: ");
+        print("\nPlease type 'y' approve the changes or anything else to cancel: ");
         buffer: *u8 = alloc(256);
         fgets(buffer, 256, stdin);
         user_input := to_string(buffer);
@@ -255,36 +259,30 @@ main :: () {
     if matches.count > 5 {
         print("Written % files.\n", matches.count);
     }
-
-    fini(*matches_arena);
-    fini(*files_arena);
 }
 
 print_help :: (args: []string) {
-    print("This tool literally replaces occurences of a string with another string inside of files found recursively in directory.\n");
-    print("By default finds and uses the git root of the current working directory.\n");
+    print("This tool literally replaces occurences of a string with another string in files found recursively in a directory.\n");
+    print("By default it finds and uses the git root of the current working directory.\n");
     print("\n");
-    print("To prevent loss of data, by default refuses to run outside of a git repository or with other unstaged or untracked changes inside of the git repository.\n");
+    print("To prevent loss of data it by default refuses to run outside of a git repository and when unstaged or untracked changes are present.\n");
     print("\n");
     print("Usage: % [options] <replace_this> <with_this>\n", args[0]);
-    print("  -d: folder to search for files\n");
-    print("  -f: run without checking git\n");
-    print("  -h: print this help message\n");
+    print("  -d: specify folder to search for files\n");
+    print("  -y: skip approval for changes to be written\n");
+    print("  -i: set to run without checking git\n");
+    print("  -h: set to print this help message\n");
     print("\n");
     print("Example: % print printf\n", args[0]);
     print("Example: % -f -d ~/Documents/People/ \"Name Surnam\" \"Name Surname\"\n", args[0]);
 }
 
-FilesMatches :: struct {
-    path: string;
-    offsets: [..]s64;
-}
-
 // TODO: ../../Replace/main a b -- can not read the files, working dir ends up being incorrect (-d . works)
+// TODO: reply 'f' for approval of each file, 'y' to approve the rest of them
+// TODO: actively skip .git directory
 // TODO: support multiple directories for search just by providing -d several times
 // TODO: option -g to disable colored output
 // TODO: option -n to print file name together with file number (for emacs/vim navigation)
-// TODO: option -c to ask to approve for every file before making the change
 // TODO: use multithreading
 // TODO: maybe filter files according to .ignore file
 // TODO: maybe restrict some characters in query, like newline
