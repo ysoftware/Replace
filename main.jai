@@ -211,6 +211,10 @@ main :: () {
 
     print("Found % % in % % (scanned % out of % %)\n", total_matches_count, match_word, matched_files_count, file_word, scanned_files_count, list_of_files.count, total_word);
 
+    if total_matches_count == 0 {
+        exit(0);
+    }
+
     if approve {
         print("Please type 'y' approve the changes or anything else to cancel: ");
         buffer: *u8 = alloc(256);
@@ -280,7 +284,7 @@ FilesMatches :: struct {
     offsets: [..]s64;
 }
 
-// TODO: ../../Replace/main a b -- can not read the files, working dir ends up being incorrect (-d . works)
+// TODO: "../../Replace/main a b" or "replace -d src hello world" -- can not read the files, working dir ends up being incorrect (-d . works)
 // TODO: support multiple directories for search just by providing -d several times
 // TODO: option -g to disable colored output
 // TODO: option -n to print file name together with file number (for emacs/vim navigation)
