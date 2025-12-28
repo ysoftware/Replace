@@ -13,6 +13,8 @@ main :: () {
     query := "";
     replace := "";
     directory := "";
+    only_search := false;
+    navigation_style_print := false;
     approve := true;
     ignore_git := false;
     help := false;
@@ -21,9 +23,18 @@ main :: () {
     while (i < args.count) {
         if args[i] == "-d" {
             i += 1;
-            directory = args[i];
+            if args.count > i {
+                directory = args[i];
+            } else {
+                print_help(args);
+                exit(1);
+            }
         } else if args[i] == "-y" {
             approve = false;
+        } else if args[i] == "-s" {
+            only_search = true;
+        } else if args[i] == "-n" {
+            navigation_style_print = true;
         } else if args[i] == "-i" {
             ignore_git = true;
         } else if args[i] == "-h" {
@@ -43,7 +54,16 @@ main :: () {
         i += 1;
     }
 
-    if query == "" || replace == "" {
+    if only_search {
+        ignore_git = true;
+    }
+
+    if query == "" {
+        print_help(args);
+        exit(0);
+    }
+
+    if replace == "" && !only_search {
         print_help(args);
         exit(0);
     }
@@ -58,14 +78,13 @@ main :: () {
         exit(0);
     }
 
+    // find directory -----------------
+
     _, output_string, _, _ := run_command("git", "rev-parse", "--show-toplevel", capture_and_return_output = true);
     git_root := trim(output_string);
+    if directory.count == 0  directory = git_root;
 
-    if directory.count == 0 {
-        directory = git_root;
-    }
-
-    if !ignore_git {
+    if !ignore_git { // check that we don't have any unprotected files, unless we ignore this rule
         if git_root.count == 0 {
             print("Git repository was not detected. To prevent loss of data, use git or pass -i to ignore this warning.\n");
             exit(1);
@@ -86,28 +105,25 @@ main :: () {
         }
     }
 
-    if directory.count == 0 {
-        directory = get_working_directory();
-    }
-    print("Searching folder %\n", directory);
-    directory = get_absolute_path(directory);
+    if directory.count == 0  directory = get_working_directory(); // TODO: returns absolute path, which is not what I want.
+    if !navigation_style_print  print("Searching folder %\n", directory);
+
+    // prepare list of files ----------
 
     list_of_files : []string;
     if git_root.count == 0 {
         list_of_files = file_list(directory, recursive = true, follow_directory_symlinks = false);
     } else {
-        _, output_string, _, _ := run_command("git", "ls-files", "--exclude-standard", capture_and_return_output = true, working_directory = directory);
-        if output_string.count > 0 {
-            list_of_files = split(trim(output_string), "\n");
-        } else {
-            list_of_files = file_list(directory, recursive = true, follow_directory_symlinks = false);
-        }
+        _, output_string, _, _ := run_command("git", "ls-files", "--exclude-standard", "--full-name", capture_and_return_output = true, working_directory = directory);
+        list_of_files = split(trim(output_string), "\n");
     }
 
     if list_of_files.count == 0 {
         print("No files found.\n");
         exit(0);
     }
+
+    // search for matches -------------
 
     files_arena: Flat_Pool;
     files_allocator := Allocator.{ proc = flat_pool_allocator_proc, data = *files_arena };
@@ -128,7 +144,8 @@ main :: () {
     total_matches_count := 0;
     scanned_files_count := 0;
     for list_of_files {
-        if it[0] == #char "." continue; // TODO: this does not work anymore, because our directory name is converted to absolute
+        if it.count == 0  continue; // sometimes we get empty lines
+        if it[0] == #char "." continue;
 
         file, ok := file_open(it, for_writing=false, keep_existing_content=false);
         if !ok continue;
@@ -168,7 +185,7 @@ main :: () {
             while true {
                 match_index := find_index_from_left(line, query, line_offset);
                 if match_index == -1 {
-                    if did_print_line_number {
+                    if did_print_line_number && !navigation_style_print {
                         print("%", string.{ data = line.data + line_offset, count = line.count - line_offset });
                     }
                     break;
@@ -176,7 +193,10 @@ main :: () {
 
                 if !did_print_file_name {
                     did_print_file_name = true;
-                    print_color("\n%\n", it, color = .RED);
+
+                    if !navigation_style_print {
+                        print_color("\n%\n", it, color = .RED);
+                    }
 
                     array_add(*matches, .{ path = it });
                     matches[matches.count-1].offsets.allocator = matches_allocator;
@@ -184,14 +204,23 @@ main :: () {
                 if !did_print_line_number {
                     is_even_color = !is_even_color;
                     did_print_line_number = true;
-                    print_color("%: ", FormatInt.{ value = line_number, minimum_digits = 6, padding = " " }, color = color);
+
+                    if !navigation_style_print {
+                        print_color("%: ", FormatInt.{ value = line_number, minimum_digits = 6, padding = " " }, color = color);
+                    }
                 }
 
                 array_add(*matches[matches.count-1].offsets, content_offset+match_index);
 
                 prefix := string.{ data = line.data + line_offset, count = match_index - line_offset };
-                print("%", trim_left(prefix));
-                print_color("%\n", query, color = color);
+
+                if navigation_style_print {
+                    print("%:%:% %", it, line_number, match_index+1, trim_left(prefix));
+                    print("%\n", query);
+                } else {
+                    print("%", trim_left(prefix));
+                    print_color("%", query, color = color);
+                }
 
                 line_offset += match_index - line_offset + query.count;
                 total_matches_count += 1;
@@ -211,11 +240,7 @@ main :: () {
 
     print("Found % % in % % (scanned % out of % %)\n", total_matches_count, match_word, matches.count, file_word, scanned_files_count, list_of_files.count, total_word);
 
-    if matches.count == 0 {
-        exit(0);
-    }
-
-    if total_matches_count == 0 {
+    if only_search || matches.count == 0 || total_matches_count == 0 {
         exit(0);
     }
 
@@ -230,6 +255,8 @@ main :: () {
             exit(0);
         }
     }
+
+    // replace matches ----------------
 
     for matches {
         reset(*files_arena, overwrite_memory = false);
@@ -276,24 +303,25 @@ print_help :: (args: []string) {
     print("  -y: skip approval for changes to be written\n");
     print("  -i: set to run without checking git\n");
     print("  -h: set to print this help message\n");
+    print("  -s: set to only search for file paths\n");
+    print("  -n: set to present matches in a format compatible with vim/emacs navigation\n");
     print("\n");
     print("Example: % print printf\n", args[0]);
     print("Example: % -f -d ~/Documents/People/ \"Name Surnam\" \"Name Surname\"\n", args[0]);
 }
 
-// TODO: "../../Replace/main a b" or "replace -d src hello world" -- can not read the files, working dir ends up being incorrect (-d . works)
-// TODO: reply 'f' for approval of each file, 'y' to approve the rest of them
-// TODO: actively skip .git directory
+// TODO: exclude directories, multiple values; auto-exclude .git directory (unless added with -d .git)
 // TODO: support multiple directories for search just by providing -d several times
-// TODO: option -g to disable colored output
-// TODO: option -n to print file name together with file number (for emacs/vim navigation)
+// TODO: better error messages, not just print_help
+// TODO: reply 'f' for approval of each file, 'y' to approve the rest of them
+// TODO: filter files using .ignore file
 // TODO: use multithreading
-// TODO: maybe filter files according to .ignore file
+// TODO: faster search algorithm
 // TODO: maybe restrict some characters in query, like newline
 // TODO: don't print lines that are too long (longer than 300 characters) - split them into multiple matches
 // TODO: check if git is installed
 
-// written using jai compiler 0.2.022
+// written using jai compiler 0.2.023
 
 #import "Basic";
 #import "Process";
