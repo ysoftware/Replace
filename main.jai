@@ -185,7 +185,7 @@ main :: () {
             while true {
                 match_index := find_index_from_left(line, query, line_offset);
                 if match_index == -1 {
-                    if did_print_line_number && !navigation_style_print {
+                    if did_print_line_number {
                         print("%", string.{ data = line.data + line_offset, count = line.count - line_offset });
                     }
                     break;
@@ -216,7 +216,7 @@ main :: () {
 
                 if navigation_style_print {
                     print("%:%:% %", it, line_number, match_index+1, trim_left(prefix));
-                    print("%\n", query);
+                    print("%", query);
                 } else {
                     print("%", trim_left(prefix));
                     print_color("%", query, color = color);
