@@ -310,6 +310,7 @@ print_help :: (args: []string) {
     print("Example: % -f -d ~/Documents/People/ \"Name Surnam\" \"Name Surname\"\n", args[0]);
 }
 
+// TODO: searching from a folder cwd=/lib/openssl leads to Could not open file "lib/openssl-3.4.1/.ctags.d/add-dir.ctags" - need to search relative to cwd
 // TODO: exclude directories, multiple values; auto-exclude .git directory (unless added with -d .git)
 // TODO: support multiple directories for search just by providing -d several times
 // TODO: better error messages, not just print_help
