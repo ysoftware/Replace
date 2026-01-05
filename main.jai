@@ -82,7 +82,7 @@ main :: () {
 
     _, output_string, _, _ := run_command("git", "rev-parse", "--show-toplevel", capture_and_return_output = true);
     git_root := trim(output_string);
-    if directory.count == 0  directory = git_root;
+    if git_root.count > 0  set_working_directory(git_root);
 
     if !ignore_git { // check that we don't have any unprotected files, unless we ignore this rule
         if git_root.count == 0 {
@@ -90,7 +90,7 @@ main :: () {
             exit(1);
         }
 
-        _, output_string, _, _ := run_command("git", "ls-files", "--others", "--modified", "--exclude-standard", capture_and_return_output = true, working_directory = directory);
+        _, output_string, _, _ := run_command("git", "ls-files", "--others", "--modified", "--exclude-standard", capture_and_return_output = true);
         unprotected_files_result := trim(output_string);
 
         if unprotected_files_result.count > 0 {
@@ -114,7 +114,7 @@ main :: () {
     if git_root.count == 0 {
         list_of_files = file_list(directory, recursive = true, follow_directory_symlinks = false);
     } else {
-        _, output_string, _, _ := run_command("git", "ls-files", "--exclude-standard", "--full-name", capture_and_return_output = true, working_directory = directory);
+        _, output_string, _, _ := run_command("git", "ls-files", "--exclude-standard", "--full-name", capture_and_return_output = true);
         list_of_files = split(trim(output_string), "\n");
     }
 
@@ -169,10 +169,7 @@ main :: () {
         did_print_file_name := false;
         content_offset := 0;
         line_number := 1;
-        is_even_color := true;
         while content_offset < contents.count {
-            color: Console_Color = ifx is_even_color then .GREEN else .BLUE;
-
             line_end := find_index_from_left(contents, #char "\n", content_offset);
             if line_end == -1 {
                 line_end = contents.count-1;
@@ -195,18 +192,17 @@ main :: () {
                     did_print_file_name = true;
 
                     if !navigation_style_print {
-                        print_color("\n%\n", it, color = .RED);
+                        print_color("\n%\n", it, color = .YELLOW);
                     }
 
                     array_add(*matches, .{ path = it });
                     matches[matches.count-1].offsets.allocator = matches_allocator;
                 }
                 if !did_print_line_number {
-                    is_even_color = !is_even_color;
                     did_print_line_number = true;
 
                     if !navigation_style_print {
-                        print_color("%: ", FormatInt.{ value = line_number, minimum_digits = 6, padding = " " }, color = color);
+                        print("%: ", FormatInt.{ value = line_number, minimum_digits = 6, padding = " " });
                     }
                 }
 
@@ -219,7 +215,7 @@ main :: () {
                     print("%", query);
                 } else {
                     print("%", trim_left(prefix));
-                    print_color("%", query, color = color);
+                    print_color("%", query, color = .GREEN);
                 }
 
                 line_offset += match_index - line_offset + query.count;
@@ -238,7 +234,9 @@ main :: () {
     file_word := ifx matches.count == 1 then "file" else "files";
     total_word := ifx list_of_files.count == 1 then "file" else "files";
 
-    print("Found % % in % % (scanned % out of % %)\n", total_matches_count, match_word, matches.count, file_word, scanned_files_count, list_of_files.count, total_word);
+    if total_matches_count == 0 || !navigation_style_print || !only_search {
+        print("Found % % in % % (scanned % out of % %)\n", total_matches_count, match_word, matches.count, file_word, scanned_files_count, list_of_files.count, total_word);
+    }
 
     if only_search || matches.count == 0 || total_matches_count == 0 {
         exit(0);
@@ -299,7 +297,7 @@ print_help :: (args: []string) {
     print("To prevent loss of data it by default refuses to run outside of a git repository and when unstaged or untracked changes are present.\n");
     print("\n");
     print("Usage: % [options] <replace_this> <with_this>\n", args[0]);
-    print("  -d: specify folder to search for files\n");
+    print("  -d: specify folder to search for files. default is git root, not the working directory\n");
     print("  -y: skip approval for changes to be written\n");
     print("  -i: set to run without checking git\n");
     print("  -h: set to print this help message\n");
@@ -310,8 +308,7 @@ print_help :: (args: []string) {
     print("Example: % -f -d ~/Documents/People/ \"Name Surnam\" \"Name Surname\"\n", args[0]);
 }
 
-// TODO: searching from a folder cwd=/lib/openssl leads to Could not open file "lib/openssl-3.4.1/.ctags.d/add-dir.ctags" - need to search relative to cwd
-// TODO: exclude directories, multiple values; auto-exclude .git directory (unless added with -d .git)
+// TODO: exclude directories (also multiple values). auto-exclude .git directory (unless added with -d .git)
 // TODO: support multiple directories for search just by providing -d several times
 // TODO: better error messages, not just print_help
 // TODO: reply 'f' for approval of each file, 'y' to approve the rest of them
@@ -320,7 +317,7 @@ print_help :: (args: []string) {
 // TODO: faster search algorithm
 // TODO: maybe restrict some characters in query, like newline
 // TODO: don't print lines that are too long (longer than 300 characters) - split them into multiple matches
-// TODO: check if git is installed
+// TODO: gracefully handle the case when git is installed
 
 // written using jai compiler 0.2.023
 
