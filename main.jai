@@ -123,6 +123,8 @@ main :: () {
         exit(0);
     }
 
+    if !navigation_style_print  print("\n");
+
     // search for matches -------------
 
     files_arena: Flat_Pool;
@@ -133,12 +135,7 @@ main :: () {
     matches_allocator := Allocator.{ proc = flat_pool_allocator_proc, data = *matches_arena };
     defer fini(*matches_arena);
 
-    FilesMatches :: struct {
-        path: string;
-        offsets: [..]s64;
-    }
-
-    matches: [..]FilesMatches;
+    matches: [..]MatchesOfOneFile;
     matches.allocator = matches_allocator;
 
     total_matches_count := 0;
@@ -154,7 +151,7 @@ main :: () {
         file_size, ok= := file_length(file);
         if !ok continue;
 
-        if file_size > 50000000 {
+        if file_size > 50000000 && !navigation_style_print {
             print("%: file is larger than 50 MB. Skipping.\n", it);
             continue;
         }
@@ -166,7 +163,7 @@ main :: () {
         if !ok || find_index_from_left(contents, byte = 0) != -1  continue; // filter out binary files
 
         reached_eof := false;
-        did_print_file_name := false;
+        did_add_match := false;
         content_offset := 0;
         line_number := 1;
         while content_offset < contents.count {
@@ -178,45 +175,18 @@ main :: () {
             line := string.{ data = *contents[content_offset], count = line_end - content_offset + 1 }; // +1 to include new line
 
             line_offset := 0;
-            did_print_line_number := false;
             while true {
                 match_index := find_index_from_left(line, query, line_offset);
-                if match_index == -1 {
-                    if did_print_line_number {
-                        print("%", string.{ data = line.data + line_offset, count = line.count - line_offset });
-                    }
-                    break;
-                }
+                if match_index == -1  break;
 
-                if !did_print_file_name {
-                    did_print_file_name = true;
-
-                    if !navigation_style_print {
-                        print_color("\n%\n", it, color = .YELLOW);
-                    }
-
+                if !did_add_match {
+                    did_add_match = true;
                     array_add(*matches, .{ path = it });
-                    matches[matches.count-1].offsets.allocator = matches_allocator;
-                }
-                if !did_print_line_number {
-                    did_print_line_number = true;
-
-                    if !navigation_style_print {
-                        print("%: ", FormatInt.{ value = line_number, minimum_digits = 6, padding = " " });
-                    }
+                    matches[matches.count-1].matches.allocator = matches_allocator;
                 }
 
-                array_add(*matches[matches.count-1].offsets, content_offset+match_index);
-
+                array_add(*matches[matches.count-1].matches, .{ offset = content_offset+match_index, line_number = line_number, line_offset = match_index+1 });
                 prefix := string.{ data = line.data + line_offset, count = match_index - line_offset };
-
-                if navigation_style_print {
-                    print("%:%:% %", it, line_number, match_index+1, trim_left(prefix));
-                    print("%", query);
-                } else {
-                    print("%", trim_left(prefix));
-                    print_color("%", query, color = .GREEN);
-                }
 
                 line_offset += match_index - line_offset + query.count;
                 total_matches_count += 1;
@@ -227,6 +197,10 @@ main :: () {
 
             if reached_eof  break;
             continue;
+        }
+
+        if (did_add_match) {
+            print_file_matches(query, matches[matches.count-1], contents, navigation_style_print);
         }
     }
 
@@ -242,29 +216,59 @@ main :: () {
         exit(0);
     }
 
-    if approve {
-        print("\nPlease type 'y' approve the changes or anything else to cancel: ");
-        buffer: *u8 = alloc(256);
-        fgets(buffer, 256, stdin);
-        user_input := to_string(buffer);
-
-        if user_input != "y\n" {
-            printf("Cancelled.\n");
-            exit(0);
-        }
-    }
-
     // replace matches ----------------
 
-    for matches {
+    is_first_question := true;
+    did_approve_all_files := false;
+    written_files_count := 0;
+
+    for < matches {
+        if approve {
+            if !is_first_question {
+                reset(*files_arena, overwrite_memory = false);
+                contents, ok := read_entire_file(it.path, zero_terminated = false,, files_allocator);
+                if !ok {
+                    print("Could not read the file again. Interrupting.\n");
+                    exit(1);
+                }
+                print_file_matches(query, it, contents, navigation_style_print);
+            }
+
+            if is_first_question {
+                print("Replace all changes: [yes] to approve.");
+                is_first_question = false;
+            } else {
+                print("Replace remaining: [yes] approve.     ");
+            }
+            if matches.count > 1 {
+                print(" Per file: [a] to approve [s] to skip - next file: ");
+                print_color("%", it.path, color = .YELLOW);
+            }
+            print(" Otherwise cancel.\nUser input: ");
+
+            buffer: *u8 = alloc(256);
+            fgets(buffer, 256, stdin);
+            user_input := to_string(buffer);
+
+            if user_input == "yes\n" {
+                did_approve_all_files = true;
+            } else if user_input == "s\n" {
+                print("\n");
+                continue;
+            } else if user_input != "a\n" {
+                print("Cancelled.\n");
+                exit(0);
+            }
+        }
+
         reset(*files_arena, overwrite_memory = false);
         contents, ok := read_entire_file(it.path, zero_terminated = false,, files_allocator);
 
-        output := string.{ data = alloc(contents.count + it.offsets.count * (replace.count - query.count),, files_allocator) };
+        output := string.{ data = alloc(contents.count + it.matches.count * (replace.count - query.count),, files_allocator) };
         read_offset := 0;
 
-        for it.offsets {
-            skip_data_length := it - read_offset;
+        for it.matches {
+            skip_data_length := it.offset - read_offset;
             memcpy(*output.data[output.count], *contents.data[read_offset], skip_data_length);
             output.count += skip_data_length;
             read_offset += skip_data_length;
@@ -282,12 +286,57 @@ main :: () {
             print("Could not write to file %. Interrupting.\n", it.path);
             exit(1);
         }
+        written_files_count += 1;
         print("Written %.\n", it.path);
     }
 
-    if matches.count > 5 {
-        print("Written % files.\n", matches.count);
+    print("Overall written % files.\n", written_files_count);
+}
+
+Match :: struct {
+    offset: s64;
+    line_number: s64;
+    line_offset: s64;
+}
+
+MatchesOfOneFile :: struct {
+    path: string;
+    matches: [..]Match;
+}
+
+print_file_matches :: (query: string, file_matches: MatchesOfOneFile, contents: string, navigation_style_print: bool) {
+    if file_matches.matches.count == 0  return;
+
+    if !navigation_style_print {
+        print_color("%\n", file_matches.path, color = .YELLOW);
     }
+
+    last_line_number_printed := -1;
+
+    for file_matches.matches {
+        did_print_line_number := false;
+        prefix := string.{ data = contents.data + it.offset - it.line_offset, count = it.line_offset };
+        if navigation_style_print {
+            print("%:%:% %", file_matches.path, it.line_number, it.line_offset, trim_left(prefix));
+            print("%", query);
+        } else {
+            if last_line_number_printed != it.line_number {
+                last_line_number_printed := it.line_number;
+                print("%: ", FormatInt.{ value = it.line_number, minimum_digits = 6, padding = " " });
+            }
+            print("%", trim_left(prefix));
+            print_color("%", query, color = .GREEN);
+        }
+
+        after_query_offset := it.offset + query.count;
+        contents_after_query := string.{ data = *contents[after_query_offset], count = contents.count - after_query_offset - 1 };
+        end_of_this_line := find_index_from_left(contents_after_query, #char "\n");
+        if end_of_this_line == -1  end_of_this_line = contents_after_query.count;
+
+        print("%\n", string.{ data = contents_after_query.data, count = end_of_this_line });
+    }
+
+    if !navigation_style_print  print("\n");
 }
 
 print_help :: (args: []string) {
@@ -305,21 +354,20 @@ print_help :: (args: []string) {
     print("  -n: set to present matches in a format compatible with vim/emacs navigation\n");
     print("\n");
     print("Example: % print printf\n", args[0]);
-    print("Example: % -f -d ~/Documents/People/ \"Name Surnam\" \"Name Surname\"\n", args[0]);
+    print("Example: % -d ~/Documents/People/ \"Name Surame\" \"Name Surname\"\n", args[0]);
 }
 
 // TODO: exclude directories (also multiple values). auto-exclude .git directory (unless added with -d .git)
 // TODO: support multiple directories for search just by providing -d several times
 // TODO: better error messages, not just print_help
-// TODO: reply 'f' for approval of each file, 'y' to approve the rest of them
 // TODO: filter files using .ignore file
 // TODO: use multithreading
 // TODO: faster search algorithm
 // TODO: maybe restrict some characters in query, like newline
 // TODO: don't print lines that are too long (longer than 300 characters) - split them into multiple matches
-// TODO: gracefully handle the case when git is installed
+// TODO: gracefully handle the case when git is not installed
 
-// written using jai compiler 0.2.023
+// developed using jai compiler 0.2.029
 
 #import "Basic";
 #import "Process";

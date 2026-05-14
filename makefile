@@ -1,2 +1,2 @@
 all:
-	jai main.jai -exe replace -release
+	jai main.jai -exe replace -o
