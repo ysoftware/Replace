@@ -105,14 +105,18 @@ main :: () {
         }
     }
 
-    if directory.count == 0  directory = get_working_directory(); // TODO: returns absolute path, which is not what I want.
-    if !navigation_style_print  print("Searching folder %\n", directory);
 
     // prepare list of files ----------
 
     list_of_files : []string;
     if git_root.count == 0 {
-        list_of_files = file_list(directory, recursive = true, follow_directory_symlinks = false);
+        working_dir := get_working_directory(); // TODO: returns absolute path, which is not what I want.
+        if !navigation_style_print  print("Searching folder %\n", working_dir);
+        list_of_files = file_list(working_dir, recursive = true, follow_directory_symlinks = false);
+    } else if directory.count > 0 {
+        if !navigation_style_print  print("Searching folder %\n", directory);
+        _, output_string, _, _ := run_command("git", "ls-files", "--exclude-standard", "--full-name", "--", directory, capture_and_return_output = true);
+        list_of_files = split(trim(output_string), "\n");
     } else {
         _, output_string, _, _ := run_command("git", "ls-files", "--exclude-standard", "--full-name", capture_and_return_output = true);
         list_of_files = split(trim(output_string), "\n");
