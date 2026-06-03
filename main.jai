@@ -223,7 +223,6 @@ main :: () {
     // replace matches ----------------
 
     is_first_question := true;
-    did_approve_all_files := false;
     written_files_count := 0;
 
     for < matches {
@@ -255,7 +254,7 @@ main :: () {
             user_input := to_string(buffer);
 
             if user_input == "yes\n" {
-                did_approve_all_files = true;
+                approve = false; // no need to approve anymore
             } else if user_input == "s\n" {
                 print("\n");
                 continue;
