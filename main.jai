@@ -308,6 +308,7 @@ print_help :: (args: []string) {
     print("Example: % -f -d ~/Documents/People/ \"Name Surnam\" \"Name Surname\"\n", args[0]);
 }
 
+// TODO: write test cases to cover all variations (normal/git, root/cwd, -d/default)
 // TODO: exclude directories (also multiple values). auto-exclude .git directory (unless added with -d .git)
 // TODO: support multiple directories for search just by providing -d several times
 // TODO: better error messages, not just print_help
