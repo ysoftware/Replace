@@ -244,10 +244,11 @@ main :: () {
                 print("Replace remaining: [yes] approve.     ");
             }
             if matches.count > 1 {
-                print(" Per file: [a] to approve [s] to skip - next file: ");
+                print(" Per file: [a] to approve [s] to skip [any other] to cancel\n");
+                print("> ");
                 print_color("%", it.path, color = .YELLOW);
             }
-            print(" Otherwise cancel.\nUser input: ");
+            print("\nUser input: ");
 
             buffer: *u8 = alloc(256);
             fgets(buffer, 256, stdin);
