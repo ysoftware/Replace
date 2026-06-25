@@ -345,17 +345,17 @@ print_file_matches :: (query: string, file_matches: MatchesOfOneFile, contents: 
 
 print_help :: (args: []string) {
     print("This tool literally replaces occurences of a string with another string in files found recursively in a directory.\n");
-    print("By default it finds and uses the git root of the current working directory.\n");
+    print("By default it uses the git root of the current working directory.\n");
     print("\n");
     print("To prevent loss of data it by default refuses to run outside of a git repository and when unstaged or untracked changes are present.\n");
     print("\n");
     print("Usage: % [options] <replace_this> <with_this>\n", args[0]);
-    print("  -d: specify folder to search for files. default is git root, not the working directory\n");
-    print("  -y: skip approval for changes to be written\n");
-    print("  -i: set to run without checking git\n");
-    print("  -h: set to print this help message\n");
-    print("  -s: set to only search for file paths\n");
-    print("  -n: set to present matches in a format compatible with vim/emacs navigation\n");
+    print("  -d: directory to search for files in. default is git root, not the working directory\n");
+    print("  -y: yes to all changes files will be written without asking\n");
+    print("  -i: ignore unstaged/untracked files in the git repository\n");
+    print("  -h: help message shall be printed\n");
+    print("  -s: search only without replacing\n");
+    print("  -n: navigation format compatible with vim/emacs will be used for output\n");
     print("\n");
     print("Example: % print printf\n", args[0]);
     print("Example: % -d ~/Documents/People/ \"Name Surame\" \"Name Surname\"\n", args[0]);
