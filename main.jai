@@ -178,9 +178,9 @@ main :: () {
             }
             line := string.{ data = *contents[content_offset], count = line_end - content_offset + 1 }; // +1 to include new line
 
-            line_offset := 0;
+            offset_in_line := 0;
             while true {
-                match_index := find_index_from_left(line, query, line_offset);
+                match_index := find_index_from_left(line, query, offset_in_line);
                 if match_index == -1  break;
 
                 if !did_add_match {
@@ -189,11 +189,20 @@ main :: () {
                     matches[matches.count-1].matches.allocator = matches_allocator;
                 }
 
-                array_add(*matches[matches.count-1].matches, .{ offset = content_offset+match_index, line_number = line_number, line_offset = match_index+1 });
-                prefix := string.{ data = line.data + line_offset, count = match_index - line_offset };
+                print("match_index: %\n", match_index);
 
-                line_offset += match_index - line_offset + query.count;
+                array_add(*matches[matches.count-1].matches, .{ offset = content_offset+match_index, line_number = line_number, column_number = match_index+1 });
+                prefix := string.{ data = line.data + offset_in_line, count = match_index - offset_in_line };
                 total_matches_count += 1;
+
+                if (content_offset+match_index < match_index+1) {
+                    print("incorrect offsets: %\noffset: %; offset_in_line: %; line_number: %\n", it, content_offset+match_index, match_index+1, line_number);
+                    print("content_offset: %; match_index: %\n", content_offset, match_index);
+                    print("line: %\n", line);
+                    assert(false);
+                }
+
+                offset_in_line += match_index - offset_in_line + query.count;
             }
 
             line_number += 1;
@@ -300,7 +309,7 @@ main :: () {
 Match :: struct {
     offset: s64;
     line_number: s64;
-    line_offset: s64;
+    column_number: s64;
 }
 
 MatchesOfOneFile :: struct {
@@ -319,9 +328,10 @@ print_file_matches :: (query: string, file_matches: MatchesOfOneFile, contents: 
 
     for file_matches.matches {
         did_print_line_number := false;
-        prefix := string.{ data = contents.data + it.offset - it.line_offset, count = it.line_offset };
+
+        prefix := string.{ data = contents.data + it.offset - it.column_number, count = it.column_number };
         if navigation_style_print {
-            print("%:%:% %", file_matches.path, it.line_number, it.line_offset, trim_left(prefix));
+            print("%:%:% %", file_matches.path, it.line_number, it.column_number, trim_left(prefix));
             print("%", query);
         } else {
             if last_line_number_printed != it.line_number {
@@ -339,6 +349,9 @@ print_file_matches :: (query: string, file_matches: MatchesOfOneFile, contents: 
 
         print("%\n", string.{ data = contents_after_query.data, count = end_of_this_line });
     }
+
+
+    print("[3]");
 
     if !navigation_style_print  print("\n");
 }
@@ -361,6 +374,7 @@ print_help :: (args: []string) {
     print("Example: % -d ~/Documents/People/ \"Name Surame\" \"Name Surname\"\n", args[0]);
 }
 
+// TODO: add -v (verbose) to show all skipped files during search, false by default
 // TODO: write test cases to cover all variations (normal/git, root/cwd, -d/default)
 // TODO: exclude directories (also multiple values). auto-exclude .git directory (unless added with -d .git)
 // TODO: support multiple directories for search just by providing -d several times
