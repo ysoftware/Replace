@@ -1,3 +1,9 @@
+# this is a test of basic functionality
+
 query first
 first query second
+query query
+nothing to see here
+                          query                          
+      nothing to find here
 last query

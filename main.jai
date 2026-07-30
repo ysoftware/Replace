@@ -337,7 +337,7 @@ print_file_matches :: (query: string, file_matches: MatchesOfOneFile, contents: 
         }
 
         after_query_offset := it.offset + query.count;
-        contents_after_query := string.{ data = *contents[after_query_offset], count = contents.count - after_query_offset - 1 };
+        contents_after_query := string.{ data = *contents[after_query_offset], count = contents.count - after_query_offset };
         end_of_this_line := find_index_from_left(contents_after_query, #char "\n");
         if end_of_this_line == -1  end_of_this_line = contents_after_query.count;
 
