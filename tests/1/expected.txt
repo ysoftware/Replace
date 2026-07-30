@@ -1,0 +1,8 @@
+Searching folder tests/1/data/
+
+[0;33mtests/1/data/file.txt
+[0;m     1: [0;32mq[0;muery first
+     2: first [0;32mq[0;muery second
+     3: last [0;32mq[0;muery
+
+Found 3 matches in 1 file (scanned 1 out of 1 file)

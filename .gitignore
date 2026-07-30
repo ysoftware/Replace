@@ -2,3 +2,5 @@
 main
 replace
 *.dSYM
+
+tests/*/result.txt

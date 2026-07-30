@@ -78,8 +78,12 @@ main :: () {
         exit(0);
     }
 
-    // find directory -----------------
+    do_work(query, replace, directory, only_search, navigation_style_print, approve, ignore_git);
+}
 
+do_work :: (query: string, replace: string, directory: string, only_search: bool, navigation_style_print: bool, approve: bool, ignore_git: bool) {
+
+    // find directory -----------------
     _, output_string, _, _ := run_command("git", "rev-parse", "--show-toplevel", capture_and_return_output = true);
     git_root := trim(output_string);
     if git_root.count > 0  set_working_directory(git_root);
@@ -168,20 +172,20 @@ main :: () {
 
         reached_eof := false;
         did_add_match := false;
-        content_offset := 0;
+        line_begin_offset := 0;
         line_number := 1;
-        while content_offset < contents.count {
-            line_end := find_index_from_left(contents, #char "\n", content_offset);
+        while line_begin_offset < contents.count {
+            line_end := find_index_from_left(contents, #char "\n", line_begin_offset);
             if line_end == -1 {
                 line_end = contents.count-1;
                 reached_eof = true;
             }
-            line := string.{ data = *contents[content_offset], count = line_end - content_offset + 1 }; // +1 to include new line
+            line := string.{ data = *contents[line_begin_offset], count = line_end - line_begin_offset + 1 }; // +1 to include new line
 
             line_offset := 0;
             while true {
-                match_index := find_index_from_left(line, query, line_offset);
-                if match_index == -1  break;
+                match_offset_on_line := find_index_from_left(line, query, line_offset);
+                if match_offset_on_line == -1  break;
 
                 if !did_add_match {
                     did_add_match = true;
@@ -189,15 +193,15 @@ main :: () {
                     matches[matches.count-1].matches.allocator = matches_allocator;
                 }
 
-                array_add(*matches[matches.count-1].matches, .{ offset = content_offset+match_index, line_number = line_number, line_offset = match_index+1 });
-                prefix := string.{ data = line.data + line_offset, count = match_index - line_offset };
+                array_add(*matches[matches.count-1].matches, .{ offset = line_begin_offset+match_offset_on_line, line_number = line_number, line_offset = match_offset_on_line });
+                prefix := string.{ data = line.data + line_offset, count = match_offset_on_line - line_offset };
 
-                line_offset += match_index - line_offset + query.count;
+                line_offset += match_offset_on_line - line_offset + query.count;
                 total_matches_count += 1;
             }
 
             line_number += 1;
-            content_offset += line.count;
+            line_begin_offset += line.count;
 
             if reached_eof  break;
             continue;
