@@ -38,22 +38,22 @@ main :: () {
     }
 }
 
-
 run_tests :: (record: bool) {
     TESTS_FOLDER :: "tests";
 
-    record_test :: (directory: string, data_folder: string, expected_file: string, query_file: string) {
-        query, success := read_entire_file(query_file, zero_terminated = true);
-        defer free(query);
+    record_test :: (directory: string, data_folder: string, expected_file: string, command_file: string) {
+        command, success := read_entire_file(command_file, zero_terminated = true);
+        defer free(command);
         if !success {
-            print_color("%: FAIL: query.txt is missing\n\n", data_folder, color = .RED);
+            print_color("%: FAIL: command.txt is missing\n\n", data_folder, color = .RED);
             return;
         }
-        query = trim(query);
 
-        command_result, result, error := run_command("./replace", "-s", "-d", data_folder, query, capture_and_return_output = true);
+        command_arguments := split(command, "\n");
+
+        command_result, result, error := run_command(..command_arguments, capture_and_return_output = true);
         if command_result.exit_code != 0 {
-            print_color("%: FAIL: command failed\n", data_folder, color = .RED);
+            print_color("%: FAIL: command % failed: % %\n", data_folder, command_arguments, command_result, error, color = .RED);
             return;
         }
 
@@ -67,14 +67,14 @@ run_tests :: (record: bool) {
         print("%\n", result);
     }
 
-    run_test :: (directory: string, data_folder: string, expected_file: string, query_file: string) {
-        query, success := read_entire_file(query_file, zero_terminated = true);
-        defer free(query);
+    run_test :: (directory: string, data_folder: string, expected_file: string, command_file: string) {
+        command, success := read_entire_file(command_file, zero_terminated = true);
+        defer free(command);
         if !success {
-            print_color("%: FAIL: query.txt is missing\n\n", data_folder, color = .RED);
+            print_color("%: FAIL: command.txt is missing\n\n", data_folder, color = .RED);
             return;
         }
-        query = trim(query);
+        command = trim(command);
 
         expected:, success = read_entire_file(expected_file);
         defer free(expected);
@@ -84,13 +84,13 @@ run_tests :: (record: bool) {
             return;
         }
 
-        command_result, result, error := run_command("./replace", "-s", "-d", data_folder, query, capture_and_return_output = true);
+        command_arguments := split(command, "\n");
+        command_result, result, error := run_command(..command_arguments, capture_and_return_output = true);
 
         if command_result.exit_code != 0 {
-            print_color("%: FAIL: command failed\n", data_folder, color = .RED);
+            print_color("%: FAIL: command % failed: % %\n", data_folder, command_arguments, command_result, error, color = .RED);
             return;
         }
-
 
         if result == expected {
             print_color("%: OK\n", directory, color = .GREEN);
@@ -114,13 +114,13 @@ run_tests :: (record: bool) {
         expected_file := builder_to_string(*builder);
 
         append(*builder, info.full_name);
-        append(*builder, "/query.txt");
-        query_file := builder_to_string(*builder);
+        append(*builder, "/command.txt");
+        command_file := builder_to_string(*builder);
 
         if should_record_test {
-            record_test(info.full_name, data_folder, expected_file, query_file);
+            record_test(info.full_name, data_folder, expected_file, command_file);
         } else {
-            run_test(info.full_name, data_folder, expected_file, query_file);
+            run_test(info.full_name, data_folder, expected_file, command_file);
         }
     }, visit_files = false, visit_directories = true);
 
