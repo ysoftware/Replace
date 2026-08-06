@@ -1,0 +1,6 @@
+./replace
+-y
+query
+test
+-d
+tests/3/data

@@ -1,0 +1,13 @@
+Searching folder tests/3/data
+
+[0;33mtests/3/data/file.txt
+[0;m     3: [0;34mtest[0;m first
+     4: first [0;34mtest[0;m second
+     5: [0;34mtest[0;m query
+     5: query [0;34mtest[0;m
+     7: [0;34mtest[0;m                          
+     9: last [0;34mtest[0;m
+
+Found 6 matches in 1 file (scanned 1 out of 1 file)
+Written tests/3/data/file.txt.
+Overall written 1 files.

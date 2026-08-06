@@ -1,6 +1,7 @@
 ./replace
 -n
 -s
+-i
 query
 -d
-tests/1/data
+tests/2/data

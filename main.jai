@@ -44,6 +44,8 @@ main :: () {
                 query = args[i];
             } else if (replace.count == 0) {
                 replace = args[i];
+            } else if (args[i].count == 0) {
+                // ignore
             } else {
                 print("Error: Unexpected extra argument '%'.\nPrinting help...\n\n", args[i]);
                 print_help(args);

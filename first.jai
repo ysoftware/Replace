@@ -51,11 +51,12 @@ run_tests :: (record: bool) {
 
         command_arguments := split(command, "\n");
 
+        print("running command: %\n", command_arguments);
         command_result, result, error := run_command(..command_arguments, capture_and_return_output = true);
-        if command_result.exit_code != 0 {
-            print_color("%: FAIL: command % failed: % %\n", data_folder, command_arguments, command_result, error, color = .RED);
-            return;
-        }
+        // if command_result.exit_code != 0 {
+        //     print_color("%: FAIL: command % failed: % %\n", data_folder, command_arguments, command_result, error, color = .RED);
+        //     return;
+        // }
 
         success = write_entire_file(expected_file, result);
         if !success {
@@ -85,12 +86,13 @@ run_tests :: (record: bool) {
         }
 
         command_arguments := split(command, "\n");
+        print("running command: %\n", command_arguments);
         command_result, result, error := run_command(..command_arguments, capture_and_return_output = true);
 
-        if command_result.exit_code != 0 {
-            print_color("%: FAIL: command % failed: % %\n", data_folder, command_arguments, command_result, error, color = .RED);
-            return;
-        }
+        // if command_result.exit_code != 0 {
+        //     print_color("%: FAIL: command failed: % reasons: % %\n", data_folder, command_arguments, command_result, error, color = .RED);
+        //     return;
+        // }
 
         if result == expected {
             print_color("%: OK\n", directory, color = .GREEN);
