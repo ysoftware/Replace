@@ -68,6 +68,10 @@ main :: () {
         exit(0);
     }
 
+    if only_search {
+        replace = "";
+    }
+
     if query == replace {
         print("Both strings are the same. Nothing to do.\n");
         exit(0);
@@ -208,7 +212,7 @@ do_work :: (query: string, replace: string, directory: string, only_search: bool
         }
 
         if (did_add_match) {
-            print_file_matches(query, matches[matches.count-1], contents, navigation_style_print);
+            print_file_matches(query, replace, matches[matches.count-1], contents, navigation_style_print);
         }
     }
 
@@ -225,6 +229,7 @@ do_work :: (query: string, replace: string, directory: string, only_search: bool
     }
 
     // replace matches ----------------
+    assert(replace.count > 0);
 
     is_first_question := true;
     written_files_count := 0;
@@ -238,7 +243,7 @@ do_work :: (query: string, replace: string, directory: string, only_search: bool
                     print("Could not read the file again. Interrupting.\n");
                     exit(1);
                 }
-                print_file_matches(query, it, contents, navigation_style_print);
+                print_file_matches(query, replace, it, contents, navigation_style_print);
             }
 
             if is_first_question {
@@ -312,7 +317,7 @@ MatchesOfOneFile :: struct {
     matches: [..]Match;
 }
 
-print_file_matches :: (query: string, file_matches: MatchesOfOneFile, contents: string, navigation_style_print: bool) {
+print_file_matches :: (query: string, replace: string, file_matches: MatchesOfOneFile, contents: string, navigation_style_print: bool) {
     if file_matches.matches.count == 0  return;
 
     if !navigation_style_print {
@@ -333,7 +338,12 @@ print_file_matches :: (query: string, file_matches: MatchesOfOneFile, contents: 
                 print("%: ", FormatInt.{ value = it.line_number, minimum_digits = 6, padding = " " });
             }
             print("%", trim_left(prefix));
-            print_color("%", query, color = .GREEN);
+
+            if replace.count > 0 {
+                print_color("%", replace, color = .BLUE);
+            } else {
+                print_color("%", query, color = .GREEN);
+            }
         }
 
         after_query_offset := it.offset + query.count;
@@ -354,10 +364,10 @@ print_help :: (args: []string) {
     print("To prevent loss of data it by default refuses to run outside of a git repository and when unstaged or untracked changes are present.\n");
     print("\n");
     print("Usage: % [options] <replace_this> <with_this>\n", args[0]);
-    print("  -d: directory to search for files in. default is git root, not the working directory\n");
-    print("  -y: yes to all changes files will be written without asking\n");
-    print("  -i: ignore unstaged/untracked files in the git repository\n");
+    print("  -d <directory>: to search for files in. default is git root, not the working directory\n");
     print("  -h: help message shall be printed\n");
+    print("  -i: ignore unstaged/untracked files in the git repository\n");
+    print("  -y: yes to all changes files will be written without asking\n");
     print("  -s: search only without replacing\n");
     print("  -n: navigation format compatible with vim/emacs will be used for output\n");
     print("\n");
@@ -365,6 +375,7 @@ print_help :: (args: []string) {
     print("Example: % -d ~/Documents/People/ \"Name Surame\" \"Name Surname\"\n", args[0]);
 }
 
+// TODO: allow adding multiple boolean parameters together (for example: -sn or -niy)
 // TODO: write test cases to cover all variations (normal/git, root/cwd, -d/default)
 // TODO: exclude directories (also multiple values). auto-exclude .git directory (unless added with -d .git)
 // TODO: support multiple directories for search just by providing -d several times
